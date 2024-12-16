@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import { Layerr } from "layerr";
 import { PRNG, ULID, ULIDFactory, UUID } from "./types.js";
 import { crockfordDecode, crockfordEncode } from "./crockford.js";
 import { ULID_REGEX, UUID_REGEX } from "./constants.js";
@@ -16,6 +15,22 @@ const ERROR_INFO = Object.freeze({
     source: "ulid"
 });
 
+class ULIDError extends Error {
+    code = null;
+    source = "ulid";
+    constructor(data, message) {
+        super(message);
+        if (data && data.info) {
+            if (data.info.code) {
+                this.code = data.info.code;
+            }
+            if (data.info.source) {
+                this.source = data.info.source;
+            }
+        }
+    }
+}
+
 /**
  * Decode time from a ULID
  * @param id The ULID
@@ -23,7 +38,7 @@ const ERROR_INFO = Object.freeze({
  */
 export function decodeTime(id: string): number {
     if (id.length !== TIME_LEN + RANDOM_LEN) {
-        throw new Layerr(
+        throw new ULIDError(
             {
                 info: {
                     code: "DEC_TIME_MALFORMED",
@@ -41,7 +56,7 @@ export function decodeTime(id: string): number {
         .reduce((carry, char, index) => {
             const encodingIndex = ENCODING.indexOf(char);
             if (encodingIndex === -1) {
-                throw new Layerr(
+                throw new ULIDError(
                     {
                         info: {
                             code: "DEC_TIME_CHAR",
@@ -54,7 +69,7 @@ export function decodeTime(id: string): number {
             return (carry += encodingIndex * Math.pow(ENCODING_LEN, index));
         }, 0);
     if (time > TIME_MAX) {
-        throw new Layerr(
+        throw new ULIDError(
             {
                 info: {
                     code: "DEC_TIME_CHAR",
@@ -67,36 +82,9 @@ export function decodeTime(id: string): number {
     return time;
 }
 
-/**
- * Detect the best PRNG (pseudo-random number generator)
- * @param root The root to check from (global/window)
- * @returns The PRNG function
- */
-export function detectPRNG(root?: any): PRNG {
-    const rootLookup = root || detectRoot();
-    const globalCrypto =
-        (rootLookup && (rootLookup.crypto || rootLookup.msCrypto)) ||
-        (typeof crypto !== "undefined" ? crypto : null);
-    if (typeof globalCrypto?.getRandomValues === "function") {
-        return () => {
-            const buffer = new Uint8Array(1);
-            globalCrypto.getRandomValues(buffer);
-            return buffer[0] / 0xff;
-        };
-    } else if (typeof globalCrypto?.randomBytes === "function") {
-        return () => globalCrypto.randomBytes(1).readUInt8() / 0xff;
-    } else if (crypto?.randomBytes) {
-        return () => crypto.randomBytes(1).readUInt8() / 0xff;
-    }
-    throw new Layerr(
-        {
-            info: {
-                code: "PRNG_DETECT",
-                ...ERROR_INFO
-            }
-        },
-        "Failed to find a reliable PRNG"
-    );
+function inWebWorker(): boolean {
+    // @ts-ignore
+    return typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
 }
 
 function detectRoot(): any {
@@ -111,6 +99,38 @@ function detectRoot(): any {
         return globalThis;
     }
     return null;
+}
+
+/**
+ * Detect the best PRNG (pseudo-random number generator)
+ * @param root The root to check from (global/window)
+ * @returns The PRNG function
+ */
+export function detectPRNG(root?: any): PRNG {
+    const rootLookup = root || detectRoot();
+    const globalCrypto =
+        (rootLookup && (rootLookup.crypto || rootLookup.msCrypto)) ||
+        (typeof crypto !== "undefined" ? crypto : null);
+    if (globalCrypto && typeof globalCrypto.getRandomValues === "function") {
+        return () => {
+            const buffer = new Uint8Array(1);
+            globalCrypto.getRandomValues(buffer);
+            return buffer[0] / 0xff;
+        };
+    } else if (globalCrypto && typeof globalCrypto.randomBytes === "function") {
+        return () => globalCrypto.randomBytes(1).readUInt8() / 0xff;
+    } else if (crypto && crypto.randomBytes) {
+        return () => crypto.randomBytes(1).readUInt8() / 0xff;
+    }
+    throw new ULIDError(
+        {
+            info: {
+                code: "PRNG_DETECT",
+                ...ERROR_INFO
+            }
+        },
+        "Failed to find a reliable PRNG"
+    );
 }
 
 export function encodeRandom(len: number, prng: PRNG): string {
@@ -129,7 +149,7 @@ export function encodeRandom(len: number, prng: PRNG): string {
  */
 export function encodeTime(now: number, len: number): string {
     if (isNaN(now)) {
-        throw new Layerr(
+        throw new ULIDError(
             {
                 info: {
                     code: "ENC_TIME_NAN",
@@ -139,7 +159,7 @@ export function encodeTime(now: number, len: number): string {
             `Time must be a number: ${now}`
         );
     } else if (now > TIME_MAX) {
-        throw new Layerr(
+        throw new ULIDError(
             {
                 info: {
                     code: "ENC_TIME_SIZE_EXCEED",
@@ -149,7 +169,7 @@ export function encodeTime(now: number, len: number): string {
             `Cannot encode a time larger than ${TIME_MAX}: ${now}`
         );
     } else if (now < 0) {
-        throw new Layerr(
+        throw new ULIDError(
             {
                 info: {
                     code: "ENC_TIME_NEG",
@@ -159,7 +179,7 @@ export function encodeTime(now: number, len: number): string {
             `Time must be positive: ${now}`
         );
     } else if (Number.isInteger(now) === false) {
-        throw new Layerr(
+        throw new ULIDError(
             {
                 info: {
                     code: "ENC_TIME_TYPE",
@@ -201,7 +221,7 @@ export function incrementBase32(str: string): string {
         char = output[index];
         charIndex = ENCODING.indexOf(char);
         if (charIndex === -1) {
-            throw new Layerr(
+            throw new ULIDError(
                 {
                     info: {
                         code: "B32_INC_ENC",
@@ -220,7 +240,7 @@ export function incrementBase32(str: string): string {
     if (typeof done === "string") {
         return done;
     }
-    throw new Layerr(
+    throw new ULIDError(
         {
             info: {
                 code: "B32_INC_INVALID",
@@ -229,11 +249,6 @@ export function incrementBase32(str: string): string {
         },
         "Failed incrementing string"
     );
-}
-
-function inWebWorker(): boolean {
-    // @ts-ignore
-    return typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
 }
 
 /**
@@ -317,7 +332,7 @@ export function ulid(seedTime?: number, prng?: PRNG): ULID {
 export function ulidToUUID(ulid: string): UUID {
     const isValid = ULID_REGEX.test(ulid);
     if (!isValid) {
-        throw new Layerr({ info: { code: "INVALID_ULID", ...ERROR_INFO } }, "Invalid ULID");
+        throw new ULIDError({ info: { code: "INVALID_ULID", ...ERROR_INFO } }, "Invalid ULID");
     }
     const uint8Array = crockfordDecode(ulid);
     let uuid = Array.from(uint8Array)
@@ -344,7 +359,7 @@ export function ulidToUUID(ulid: string): UUID {
 export function uuidToULID(uuid: string): ULID {
     const isValid = UUID_REGEX.test(uuid);
     if (!isValid) {
-        throw new Layerr({ info: { code: "INVALID_UUID", ...ERROR_INFO } }, "Invalid UUID");
+        throw new ULIDError({ info: { code: "INVALID_UUID", ...ERROR_INFO } }, "Invalid UUID");
     }
     const uint8Array = new Uint8Array(
         uuid

@@ -1,5 +1,7 @@
 import { expect } from "chai";
 import sinon from "sinon";
+import FakeTimers from "@sinonjs/fake-timers";
+
 import { randomUUID } from "node:crypto";
 import {
     MAX_ULID,
@@ -181,7 +183,7 @@ describe("ulid", function () {
 
             describe("without seedTime", function () {
                 before(function () {
-                    this.clock = sinon.useFakeTimers({
+                    this.clock = FakeTimers.install({
                         now: 1469918176385,
                         toFake: ["Date"]
                     });
@@ -189,7 +191,7 @@ describe("ulid", function () {
                 });
 
                 after(function () {
-                    this.clock.restore();
+                    this.clock.uninstall();
                 });
 
                 it("first call", function () {
@@ -207,6 +209,14 @@ describe("ulid", function () {
                 it("fourth call", function () {
                     expect(this.ulid()).to.equal("01ARYZ6S41YYYYYYYYYYYYYYZ1");
                 });
+                it("combineCall", function () {
+                    expect(
+                        Array(1000)
+                            .fill("_")
+                            .map(() => this.ulid())
+                            .filter((l, i, arr) => arr.indexOf(l) === i).length
+                    ).to.eq(1000);
+                });
             });
         });
     });
@@ -218,6 +228,15 @@ describe("ulid", function () {
 
         it("should return expected encoded time component result", function () {
             expect(ulid(1469918176385).substring(0, 10)).to.equal("01ARYZ6S41");
+        });
+
+        it("produce unique ulid", function () {
+            expect(
+                Array(1000)
+                    .fill("_")
+                    .map(() => ulid())
+                    .filter((l, i, arr) => arr.indexOf(l) === i).length
+            ).to.eq(1000);
         });
     });
 

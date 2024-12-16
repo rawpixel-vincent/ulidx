@@ -1,5 +1,5 @@
 import Benchmark from "benchmark";
-import { ulid } from "../dist/esm/index.js";
+import { ulid } from "../dist/browser/index.js";
 
 const suite = new Benchmark.Suite();
 

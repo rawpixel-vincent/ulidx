@@ -2,7 +2,7 @@ import { builtinModules } from "node:module";
 import typescript from "@rollup/plugin-typescript";
 import resolve from "@rollup/plugin-node-resolve";
 import alias from "@rollup/plugin-alias";
-import pkg from "./package.json" assert { type: "json" };
+import pkg from "./package.json" with { type: "json" };
 
 const EXTENSIONS = [".js", ".ts"];
 const ENV = process.env.ENV ? process.env.ENV : "node";
